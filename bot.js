@@ -24,12 +24,19 @@ async function sendStartImage(ctx, caption) {
 async function downloadAndSend(ctx, query, type) {
   const statusMsg = await ctx.reply(`🔍 *${query}* ...`, { parse_mode: 'Markdown' });
   try {
-    const searchCmd = `yt-dlp "ytsearch1:${query.replace(/"/g, '\\"')}" --get-id`;
+    // Use which yt-dlp to get full path, fallback to 'yt-dlp'
+    let ytDlpCmd = 'yt-dlp';
+    try {
+      const { stdout: whichOut } = await execPromise('which yt-dlp', { timeout: 5000 });
+      if (whichOut.trim()) ytDlpCmd = whichOut.trim();
+    } catch(e) { /* use default */ }
+
+    const searchCmd = `${ytDlpCmd} "ytsearch1:${query.replace(/"/g, '\\"')}" --get-id`;
     const { stdout: idOut } = await execPromise(searchCmd, { timeout: 20000 });
     const videoId = idOut.trim();
     if (!videoId) throw new Error('No results');
 
-    const titleCmd = `yt-dlp "https://youtube.com/watch?v=${videoId}" --get-title`;
+    const titleCmd = `${ytDlpCmd} "https://youtube.com/watch?v=${videoId}" --get-title`;
     const { stdout: titleOut } = await execPromise(titleCmd, { timeout: 10000 });
     const title = titleOut.trim();
 
@@ -42,10 +49,10 @@ async function downloadAndSend(ctx, query, type) {
 
     if (type === 'song') {
       outputFile = `${outputBase}.mp3`;
-      cmd = `yt-dlp -f bestaudio --extract-audio --audio-format mp3 --audio-quality 128k -o "${outputFile}" "${url}"`;
+      cmd = `${ytDlpCmd} -f bestaudio --extract-audio --audio-format mp3 --audio-quality 128k -o "${outputFile}" "${url}"`;
     } else {
       outputFile = `${outputBase}.webm`;
-      cmd = `yt-dlp -f "bestvideo[height<=480][ext=webm]+bestaudio[ext=webm]/best[height<=480][ext=webm]" -o "${outputFile}" "${url}"`;
+      cmd = `${ytDlpCmd} -f "bestvideo[height<=480][ext=webm]+bestaudio[ext=webm]/best[height<=480][ext=webm]" -o "${outputFile}" "${url}"`;
     }
 
     await execPromise(cmd, { timeout: 90000 });
@@ -78,7 +85,7 @@ bot.start(async (ctx) => {
 /video <name> → WebM (fast)
 /help → this
 
-💡 *Example:* \`/video body language vybz kartel\`
+💡 *Example:* \`/video cry allan walker\`
   `;
   await sendStartImage(ctx, caption);
 });
@@ -93,7 +100,7 @@ bot.command('help', async (ctx) => {
 /video <name> → WebM (fast)
 /help → this
 
-💡 *Example:* \`/video body language vybz kartel\`
+💡 *Example:* \`/video cry allan walker\`
   `;
   await ctx.reply(caption, { parse_mode: 'Markdown' });
 });
