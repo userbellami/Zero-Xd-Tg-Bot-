@@ -5,7 +5,7 @@ const execPromise = util.promisify(exec);
 const fs = require('fs');
 const path = require('path');
 
-const BOT_TOKEN = process.env.BOT_TOKEN || '8755252954:AAFA8f1lc056FWOr5sRXsLjPFmK2BjkUg7o';
+const BOT_TOKEN = process.env.BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE';
 const OWNER_NAME = 'LORD MONK 💧';
 const START_IMAGE = 'xero.jpg';
 const DOWNLOAD_DIR = path.join(__dirname, 'downloads');
@@ -24,13 +24,11 @@ async function sendStartImage(ctx, caption) {
 async function downloadAndSend(ctx, query, type) {
   const statusMsg = await ctx.reply(`🔍 *${query}* ...`, { parse_mode: 'Markdown' });
   try {
-    // Get video ID using yt-dlp search
     const searchCmd = `yt-dlp "ytsearch1:${query.replace(/"/g, '\\"')}" --get-id`;
-    const { stdout: idOut } = await execPromise(searchCmd, { timeout: 15000 });
+    const { stdout: idOut } = await execPromise(searchCmd, { timeout: 20000 });
     const videoId = idOut.trim();
     if (!videoId) throw new Error('No results');
 
-    // Get title separately
     const titleCmd = `yt-dlp "https://youtube.com/watch?v=${videoId}" --get-title`;
     const { stdout: titleOut } = await execPromise(titleCmd, { timeout: 10000 });
     const title = titleOut.trim();
@@ -85,7 +83,21 @@ bot.start(async (ctx) => {
   await sendStartImage(ctx, caption);
 });
 
-bot.help((ctx) => ctx.start());
+bot.command('help', async (ctx) => {
+  const caption = `
+✨ *Xero Xd Bot* ✨
+👑 **Owner:** ${OWNER_NAME}
+
+⚡ *Commands:*
+/song <name> → MP3
+/video <name> → WebM (fast)
+/help → this
+
+💡 *Example:* \`/video body language vybz kartel\`
+  `;
+  await ctx.reply(caption, { parse_mode: 'Markdown' });
+});
+
 bot.command('song', async (ctx) => {
   const q = ctx.message.text.split(' ').slice(1).join(' ');
   if (!q) return ctx.reply('🎵 Example: `/song blinding lights`', { parse_mode: 'Markdown' });
