@@ -4,6 +4,8 @@ const ytSearch = require('yt-search');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const axios = require('axios');
+const tough = require('tough-cookie');
 
 const BOT_TOKEN = process.env.BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE';
 const OWNER_NAME = 'LORD MONK 💧';
@@ -12,6 +14,58 @@ const DOWNLOAD_DIR = path.join(__dirname, 'downloads');
 if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR);
 
 const bot = new Telegraf(BOT_TOKEN, { telegram: { timeout: 120 } });
+
+// Cookie management
+let cookieJar = new tough.CookieJar();
+
+async function getYoutubeCookie() {
+    try {
+        const cookieFile = path.join(__dirname, 'cookies.json');
+        if (fs.existsSync(cookieFile)) {
+            const cookieData = JSON.parse(fs.readFileSync(cookieFile, 'utf8'));
+            cookieJar = tough.CookieJar.deserializeSync(cookieData, new tough.CookieJar());
+        }
+        const cookieString = await cookieJar.getCookieString('https://www.youtube.com');
+        return cookieString;
+    } catch (error) {
+        return '';
+    }
+}
+
+async function saveCookieJar() {
+    try {
+        const cookieData = cookieJar.serializeSync();
+        fs.writeFileSync(path.join(__dirname, 'cookies.json'), JSON.stringify(cookieData, null, 2));
+    } catch (error) {}
+}
+
+async function updateCookiesFromBrowser() {
+    try {
+        const response = await axios.get('https://www.youtube.com', {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
+        const setCookieHeaders = response.headers['set-cookie'];
+        if (setCookieHeaders) {
+            for (const header of setCookieHeaders) {
+                cookieJar.setCookieSync(header, 'https://www.youtube.com');
+            }
+            await saveCookieJar();
+            return true;
+        }
+    } catch (error) {}
+    return false;
+}
+
+async function ensureValidCookies() {
+    let cookieString = await getYoutubeCookie();
+    if (!cookieString || cookieString.length < 10) {
+        await updateCookiesFromBrowser();
+        cookieString = await getYoutubeCookie();
+    }
+    return cookieString;
+}
 
 async function sendStartImage(ctx, caption) {
   if (fs.existsSync(START_IMAGE)) {
@@ -24,6 +78,7 @@ async function sendStartImage(ctx, caption) {
 async function downloadAndSend(ctx, query, type) {
   const statusMsg = await ctx.reply(`🔍 *${query}* ...`, { parse_mode: 'Markdown' });
   try {
+    const cookieString = await ensureValidCookies();
     const searchResults = await ytSearch(query);
     if (!searchResults.videos.length) throw new Error('No results');
     const video = searchResults.videos[0];
@@ -36,28 +91,23 @@ async function downloadAndSend(ctx, query, type) {
     const outputBase = path.join(DOWNLOAD_DIR, `${Date.now()}_${safeTitle}`);
     let outputFile, stream, ffmpegArgs;
 
+    const requestOptions = cookieString ? {
+        requestOptions: {
+            headers: {
+                Cookie: cookieString,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        }
+    } : {};
+
     if (type === 'song') {
       outputFile = `${outputBase}.mp3`;
-      stream = ytdl(url, { quality: 'highestaudio' });
-      ffmpegArgs = [
-        '-i', 'pipe:0',
-        '-acodec', 'libmp3lame',
-        '-ab', '128k',
-        '-f', 'mp3',
-        '-y', outputFile
-      ];
+      stream = ytdl(url, { ...requestOptions, quality: 'highestaudio' });
+      ffmpegArgs = ['-i', 'pipe:0', '-acodec', 'libmp3lame', '-ab', '128k', '-f', 'mp3', '-y', outputFile];
     } else {
       outputFile = `${outputBase}.webm`;
-      stream = ytdl(url, { quality: 'highestvideo' });
-      ffmpegArgs = [
-        '-i', 'pipe:0',
-        '-c:v', 'libvpx',
-        '-c:a', 'libopus',
-        '-b:v', '1M',
-        '-b:a', '128k',
-        '-f', 'webm',
-        '-y', outputFile
-      ];
+      stream = ytdl(url, { ...requestOptions, quality: 'highestvideo' });
+      ffmpegArgs = ['-i', 'pipe:0', '-c:v', 'libvpx', '-c:a', 'libopus', '-b:v', '1M', '-b:a', '128k', '-f', 'webm', '-y', outputFile];
     }
 
     await new Promise((resolve, reject) => {
