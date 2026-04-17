@@ -178,6 +178,13 @@ bot.command('video', async (ctx) => {
   await downloadAndSend(ctx, q, 'video');
 });
 
-bot.launch().then(() => console.log('✅ Xero Xd Bot is live!'));
+// Handle 409 conflict by dropping pending updates
+bot.launch({ dropPendingUpdates: true }).then(() => {
+  console.log('✅ Xero Xd Bot is live!');
+}).catch((err) => {
+  console.error('Failed to launch bot:', err);
+  process.exit(1);
+});
+
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
