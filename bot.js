@@ -1,9 +1,9 @@
 const { Telegraf } = require('telegraf');
-const { exec } = require('child_process');
-const util = require('util');
-const execPromise = util.promisify(exec);
+const ytdl = require('ytdl-core');
+const ytSearch = require('yt-search');
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 
 const BOT_TOKEN = process.env.BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE';
 const OWNER_NAME = 'LORD MONK 💧';
@@ -24,38 +24,50 @@ async function sendStartImage(ctx, caption) {
 async function downloadAndSend(ctx, query, type) {
   const statusMsg = await ctx.reply(`🔍 *${query}* ...`, { parse_mode: 'Markdown' });
   try {
-    // Use which yt-dlp to get full path, fallback to 'yt-dlp'
-    let ytDlpCmd = 'yt-dlp';
-    try {
-      const { stdout: whichOut } = await execPromise('which yt-dlp', { timeout: 5000 });
-      if (whichOut.trim()) ytDlpCmd = whichOut.trim();
-    } catch(e) { /* use default */ }
+    const searchResults = await ytSearch(query);
+    if (!searchResults.videos.length) throw new Error('No results');
+    const video = searchResults.videos[0];
+    const title = video.title;
+    const url = video.url;
 
-    const searchCmd = `${ytDlpCmd} "ytsearch1:${query.replace(/"/g, '\\"')}" --get-id`;
-    const { stdout: idOut } = await execPromise(searchCmd, { timeout: 20000 });
-    const videoId = idOut.trim();
-    if (!videoId) throw new Error('No results');
-
-    const titleCmd = `${ytDlpCmd} "https://youtube.com/watch?v=${videoId}" --get-title`;
-    const { stdout: titleOut } = await execPromise(titleCmd, { timeout: 10000 });
-    const title = titleOut.trim();
-
-    const url = `https://youtube.com/watch?v=${videoId}`;
     await ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, `⬇️ *${title.substring(0, 50)}*`, { parse_mode: 'Markdown' });
 
     const safeTitle = title.replace(/[^\w\s]/gi, '').substring(0, 50);
     const outputBase = path.join(DOWNLOAD_DIR, `${Date.now()}_${safeTitle}`);
-    let outputFile, cmd;
+    let outputFile, stream, ffmpegArgs;
 
     if (type === 'song') {
       outputFile = `${outputBase}.mp3`;
-      cmd = `${ytDlpCmd} -f bestaudio --extract-audio --audio-format mp3 --audio-quality 128k -o "${outputFile}" "${url}"`;
+      stream = ytdl(url, { quality: 'highestaudio' });
+      ffmpegArgs = [
+        '-i', 'pipe:0',
+        '-acodec', 'libmp3lame',
+        '-ab', '128k',
+        '-f', 'mp3',
+        '-y', outputFile
+      ];
     } else {
       outputFile = `${outputBase}.webm`;
-      cmd = `${ytDlpCmd} -f "bestvideo[height<=480][ext=webm]+bestaudio[ext=webm]/best[height<=480][ext=webm]" -o "${outputFile}" "${url}"`;
+      stream = ytdl(url, { quality: 'highestvideo' });
+      ffmpegArgs = [
+        '-i', 'pipe:0',
+        '-c:v', 'libvpx',
+        '-c:a', 'libopus',
+        '-b:v', '1M',
+        '-b:a', '128k',
+        '-f', 'webm',
+        '-y', outputFile
+      ];
     }
 
-    await execPromise(cmd, { timeout: 90000 });
+    await new Promise((resolve, reject) => {
+      const ffmpeg = spawn('ffmpeg', ffmpegArgs);
+      stream.pipe(ffmpeg.stdin);
+      ffmpeg.on('close', (code) => code === 0 ? resolve() : reject(new Error(`FFmpeg error ${code}`)));
+      ffmpeg.on('error', reject);
+      stream.on('error', reject);
+    });
+
     if (!fs.existsSync(outputFile)) throw new Error('File missing');
 
     await ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, `📤 *Uploading...*`, { parse_mode: 'Markdown' });
