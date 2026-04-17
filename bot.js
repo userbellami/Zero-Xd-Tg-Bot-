@@ -1,5 +1,5 @@
 const { Telegraf } = require('telegraf');
-const ytdl = require('ytdl-core');
+const ytdl = require('@distube/ytdl-core');
 const ytSearch = require('yt-search');
 const fs = require('fs');
 const path = require('path');
@@ -91,14 +91,14 @@ async function downloadAndSend(ctx, query, type) {
     const outputBase = path.join(DOWNLOAD_DIR, `${Date.now()}_${safeTitle}`);
     let outputFile, stream, ffmpegArgs;
 
-    const requestOptions = cookieString ? {
+    const requestOptions = {
         requestOptions: {
             headers: {
-                Cookie: cookieString,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                Cookie: cookieString
             }
         }
-    } : {};
+    };
 
     if (type === 'song') {
       outputFile = `${outputBase}.mp3`;
