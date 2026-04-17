@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: xero-xd-bot
+    runtime: image
+    repo: https://github.com/yourusername/your-repo-name
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
